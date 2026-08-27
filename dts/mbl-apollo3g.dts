@@ -1,0 +1,574 @@
+/dts-v1/;
+
+/ {
+	#address-cells = <0x02>;
+	#size-cells = <0x01>;
+	dcr-parent = <0x01>;
+	compatible = "wd,mybooklive", "amcc,apollo3g";
+	model = "MyBook Live";
+
+	aliases {
+		ethernet0 = "/plb/opb/ethernet@ef600c00";
+		serial0 = "/plb/opb/serial@ef600300";
+	};
+
+	cpus {
+		#address-cells = <0x01>;
+		#size-cells = <0x00>;
+
+		cpu@0 {
+			device_type = "cpu";
+			model = "PowerPC,apm82181";
+			reg = <0x00>;
+			clock-frequency = <0x00>;
+			timebase-frequency = <0x00>;
+			i-cache-line-size = <0x20>;
+			d-cache-line-size = <0x20>;
+			i-cache-size = <0x8000>;
+			d-cache-size = <0x8000>;
+			dcr-controller;
+			dcr-access-method = "native";
+			next-level-cache = <0x02>;
+			phandle = <0x01>;
+		};
+	};
+
+	memory {
+		device_type = "memory";
+		reg = <0x00 0x00 0x00>;
+	};
+
+	interrupt-controller0 {
+		compatible = "apm,uic-apm82181", "ibm,uic";
+		interrupt-controller;
+		cell-index = <0x00>;
+		dcr-reg = <0xc0 0x09>;
+		#address-cells = <0x00>;
+		#size-cells = <0x00>;
+		#interrupt-cells = <0x02>;
+		phandle = <0x03>;
+	};
+
+	interrupt-controller1 {
+		compatible = "apm,uic-apm82181", "ibm,uic";
+		interrupt-controller;
+		cell-index = <0x01>;
+		dcr-reg = <0xd0 0x09>;
+		#address-cells = <0x00>;
+		#size-cells = <0x00>;
+		#interrupt-cells = <0x02>;
+		interrupts = <0x1e 0x04 0x1f 0x04>;
+		interrupt-parent = <0x03>;
+		phandle = <0x04>;
+	};
+
+	interrupt-controller2 {
+		compatible = "apm,uic-apm82181", "ibm,uic";
+		interrupt-controller;
+		cell-index = <0x02>;
+		dcr-reg = <0xe0 0x09>;
+		#address-cells = <0x00>;
+		#size-cells = <0x00>;
+		#interrupt-cells = <0x02>;
+		interrupts = <0x0a 0x04 0x0b 0x04>;
+		interrupt-parent = <0x03>;
+		phandle = <0x07>;
+	};
+
+	interrupt-controller3 {
+		compatible = "apm,uic-apm82181", "ibm,uic";
+		interrupt-controller;
+		cell-index = <0x03>;
+		dcr-reg = <0xf0 0x09>;
+		#address-cells = <0x00>;
+		#size-cells = <0x00>;
+		#interrupt-cells = <0x02>;
+		interrupts = <0x10 0x04 0x11 0x04>;
+		interrupt-parent = <0x03>;
+		phandle = <0x12>;
+	};
+
+	ocm@400040000 {
+		compatible = "apm,ocm-apm82181", "ibm,ocm";
+		status = "okay";
+		cell-index = <0x01>;
+		reg = <0x04 0x40000 0x8000>;
+	};
+
+	sdr {
+		compatible = "apm,sdr-apm82181", "ibm,sdr-460ex";
+		dcr-reg = <0x0e 0x02>;
+	};
+
+	cpr {
+		compatible = "apm,cpr-apm82181", "ibm,cpr-460ex";
+		dcr-reg = <0x0c 0x02>;
+	};
+
+	l2c {
+		compatible = "ibm,l2-cache-apm82181", "ibm,l2-cache";
+		dcr-reg = <0x20 0x08 0x30 0x08>;
+		cache-line-size = <0x20>;
+		cache-size = <0x40000>;
+		interrupt-parent = <0x04>;
+		interrupts = <0x0b 0x01>;
+		phandle = <0x02>;
+	};
+
+	cpm {
+		compatible = "ibm,cpm-apm821xx", "ibm,cpm";
+		cell-index = <0x00>;
+		dcr-reg = <0x160 0x03>;
+		pm-cpu = <0x2000000>;
+		pm-doze = <0x302570f0>;
+		pm-nap = <0x302570f0>;
+		pm-deepsleep = <0x302570f0>;
+		pm-iic-device = <0x05>;
+		pm-emac-device = <0x06>;
+		unused-units = <0x100>;
+		idle-doze = <0x2000000>;
+		standby = <0xfeff791d>;
+	};
+
+	plb {
+		compatible = "apm,plb-apm82181", "ibm,plb-460ex", "ibm,plb4";
+		#address-cells = <0x02>;
+		#size-cells = <0x01>;
+		ranges;
+		clock-frequency = <0x00>;
+
+		sdram {
+			compatible = "apm,sdram-apm82181", "ibm,sdram-460ex", "ibm,sdram-405gp";
+			dcr-reg = <0x10 0x02>;
+		};
+
+		rtc {
+			compatible = "ibm,rtc";
+			dcr-reg = <0x240 0x09>;
+			interrupts = <0x1a 0x04>;
+			interrupt-parent = <0x07>;
+			status = "disabled";
+		};
+
+		trng@110000 {
+			compatible = "amcc,ppc460ex-rng", "ppc4xx-rng", "amcc, ppc4xx-trng";
+			reg = <0x04 0x110000 0x100>;
+			interrupt-parent = <0x04>;
+			interrupts = <0x03 0x04>;
+			status = "okay";
+		};
+
+		pka@114000 {
+			compatible = "ppc4xx-pka", "amcc,ppc4xx-pka", "amcc, ppc4xx-pka";
+			reg = <0x04 0x114000 0x4000>;
+			interrupt-parent = <0x03>;
+			interrupts = <0x14 0x01>;
+			status = "okay";
+		};
+
+		crypto@180000 {
+			compatible = "amcc,ppc460ex-crypto", "amcc,ppc4xx-crypto";
+			reg = <0x04 0x180000 0x80400>;
+			interrupt-parent = <0x03>;
+			interrupts = <0x1d 0x04>;
+			status = "okay";
+		};
+
+		mcmal {
+			compatible = "ibm,mcmal-460ex", "ibm,mcmal2";
+			descriptor-memory = "ocm";
+			dcr-reg = <0x180 0x62>;
+			num-tx-chans = <0x01>;
+			num-rx-chans = <0x01>;
+			#address-cells = <0x00>;
+			#size-cells = <0x00>;
+			interrupt-parent = <0x07>;
+			interrupts = <0x06 0x04 0x07 0x04 0x03 0x04 0x04 0x04 0x05 0x04 0x08 0x02 0x09 0x02 0x0c 0x02 0x0d 0x02>;
+			interrupt-names = "txeob", "rxeob", "serr", "txde", "rxde", "tx0coal", "tx1coal", "rx0coal", "rx1coal";
+			phandle = <0x09>;
+		};
+
+		opb {
+			compatible = "ibm,opb-460ex", "ibm,opb";
+			#address-cells = <0x01>;
+			#size-cells = <0x01>;
+			ranges = <0xb0000000 0x04 0xb0000000 0x50000000>;
+			clock-frequency = <0x00>;
+
+			ebc {
+				compatible = "ibm,ebc-460ex", "ibm,ebc";
+				dcr-reg = <0x12 0x02>;
+				#address-cells = <0x02>;
+				#size-cells = <0x01>;
+				clock-frequency = <0x00>;
+				ranges = <0x03 0x00 0xe0000000 0x8000000>;
+				interrupts = <0x06 0x04>;
+				interrupt-parent = <0x04>;
+
+				nor_flash@0,0 {
+					compatible = "jedec-flash";
+					bank-width = <0x01>;
+					reg = <0x00 0x00 0x80000>;
+					#address-cells = <0x01>;
+					#size-cells = <0x01>;
+					status = "okay";
+
+					partitions {
+						compatible = "fixed-partitions";
+						#address-cells = <0x01>;
+						#size-cells = <0x01>;
+
+						partition@0 {
+							label = "free";
+							reg = <0x00 0x1e000>;
+							read-only;
+						};
+
+						partition@1e000 {
+							compatible = "fixed-partitions";
+							reg = <0x1e000 0x2000>;
+							label = "u-boot-env";
+							#address-cells = <0x01>;
+							#size-cells = <0x01>;
+
+							partition@0 {
+								reg = <0x00 0x1000>;
+								label = "u-boot-env-1";
+								status = "disabled";
+
+								nvmem-layout {
+									compatible = "u-boot,env-redundant-bool";
+
+									ethaddr {
+									};
+								};
+							};
+
+							partition@1000 {
+								reg = <0x1000 0x1000>;
+								label = "u-boot-env-2";
+								status = "disabled";
+
+								nvmem-layout {
+									compatible = "u-boot,env-redundant-bool";
+								};
+							};
+						};
+
+						partition@20000 {
+							label = "uboot";
+							reg = <0x20000 0x50000>;
+							read-only;
+						};
+					};
+				};
+
+				ndfc@1,0 {
+					compatible = "ibm,ndfc";
+					reg = <0x03 0x00 0x400>;
+					ccr = <0x1000>;
+					bank-settings = <0x80002222>;
+					status = "disabled";
+					phandle = <0x08>;
+
+					nand {
+						nand-ecc-engine = <0x08>;
+						nand-ecc-algo = "hamming";
+						nand-ecc-step-size = <0x100>;
+						nand-ecc-strength = <0x01>;
+					};
+				};
+			};
+
+			serial@ef600300 {
+				compatible = "ns16750", "ns16550";
+				reg = <0xef600300 0x08>;
+				virtual-reg = <0xef600300>;
+				clock-frequency = <0x00>;
+				interrupt-parent = <0x04>;
+				interrupts = <0x01 0x04>;
+				status = "okay";
+			};
+
+			serial@ef600400 {
+				compatible = "ns16750", "ns16550";
+				reg = <0xef600400 0x08>;
+				virtual-reg = <0xef600400>;
+				clock-frequency = <0x00>;
+				interrupt-parent = <0x03>;
+				interrupts = <0x01 0x04>;
+				status = "disabled";
+			};
+
+			i2c@ef600700 {
+				compatible = "ibm,iic-460ex", "ibm,iic";
+				reg = <0xef600700 0x14>;
+				interrupt-parent = <0x03>;
+				interrupts = <0x02 0x04>;
+				#address-cells = <0x01>;
+				#size-cells = <0x00>;
+				status = "disabled";
+				phandle = <0x05>;
+			};
+
+			i2c@ef600800 {
+				compatible = "ibm,iic-460ex", "ibm,iic";
+				reg = <0xef600800 0x14>;
+				interrupt-parent = <0x03>;
+				interrupts = <0x03 0x04>;
+				#address-cells = <0x01>;
+				#size-cells = <0x00>;
+				status = "disabled";
+			};
+
+			gpio@ef600b00 {
+				compatible = "ibm,ppc4xx-gpio";
+				reg = <0xef600b00 0x48>;
+				#gpio-cells = <0x02>;
+				gpio-controller;
+				status = "disabled";
+			};
+
+			ethernet@ef600c00 {
+				device_type = "network";
+				compatible = "ibm,emac-apm821xx", "ibm,emac4sync";
+				interrupt-parent = <0x06>;
+				interrupts = <0x00 0x01>;
+				#interrupt-cells = <0x01>;
+				#address-cells = <0x00>;
+				#size-cells = <0x00>;
+				interrupt-map = <0x00 0x07 0x10 0x04 0x01 0x07 0x14 0x04>;
+				interrupt-names = "status", "wake";
+				reg = <0xef600c00 0xc4>;
+				/* Locally administered address for the QEMU-only board DTB. */
+				local-mac-address = [02 4d 42 4c 00 01];
+				mal-device = <0x09>;
+				mal-tx-channel = <0x00>;
+				mal-rx-channel = <0x00>;
+				cell-index = <0x00>;
+				max-frame-size = <0x2328>;
+				rx-fifo-size = <0x4000>;
+				tx-fifo-size = <0x800>;
+				phy-mode = "rgmii-id";
+				phy-map = <0x02>;
+				rgmii-device = <0x0a>;
+				rgmii-channel = <0x00>;
+				tah-device = <0x0b>;
+				tah-channel = <0x00>;
+				has-inverted-stacr-oc;
+				has-new-stacr-staopc;
+				status = "okay";
+				phy-address = <0x01>;
+				phy-handle = <0x0c>;
+				phandle = <0x06>;
+
+				mdio {
+					#address-cells = <0x01>;
+					#size-cells = <0x00>;
+					reset-gpios = <0x0d 0x00 0x01>;
+
+					phy@1 {
+						compatible = "ethernet-phy-ieee802.3-c22";
+						reg = <0x01>;
+						phandle = <0x0c>;
+					};
+				};
+			};
+
+			emac-tah@ef601350 {
+				compatible = "ibm,tah-460ex", "ibm,tah";
+				reg = <0xef601350 0x30>;
+				phandle = <0x0b>;
+			};
+
+			emac-rgmii@ef601500 {
+				compatible = "ibm,rgmii-405ex", "ibm,rgmii";
+				reg = <0xef601500 0x08>;
+				has-mdio;
+				phandle = <0x0a>;
+			};
+
+			gpio@e0000000 {
+				compatible = "wd,mbl-gpio", "ti,74273";
+				reg-names = "dat";
+				reg = <0xe0000000 0x01>;
+				#gpio-cells = <0x02>;
+				gpio-controller;
+				phandle = <0x0d>;
+
+				enable-button {
+					gpio-hog;
+					line-name = "Enable Reset Button, disable NOR";
+					gpios = <0x01 0x00>;
+					output-low;
+				};
+			};
+
+			gpio@e0100000 {
+				compatible = "wd,mbl-gpio", "ti,74244";
+				reg-names = "dat";
+				reg = <0xe0100000 0x01>;
+				#gpio-cells = <0x02>;
+				gpio-controller;
+				no-output;
+				phandle = <0x0e>;
+			};
+
+			leds {
+				compatible = "gpio-leds";
+
+				led-0 {
+					color = <0x01>;
+					function = "fault";
+					gpios = <0x0d 0x04 0x00>;
+					panic-indicator;
+				};
+
+				led-1 {
+					color = <0x02>;
+					function = "power";
+					gpios = <0x0d 0x05 0x00>;
+				};
+
+				led-2 {
+					color = <0x03>;
+					function = "disk";
+					gpios = <0x0d 0x06 0x00>;
+					linux,default-trigger = "disk-activity";
+				};
+			};
+
+			keys {
+				compatible = "gpio-keys-polled";
+				poll-interval = <0x3c>;
+				autorepeat;
+
+				button-restart {
+					label = "Reset button";
+					linux,code = <0x198>;
+					gpios = <0x0e 0x02 0x01>;
+				};
+			};
+
+			usb-regulator {
+				compatible = "regulator-fixed";
+				regulator-name = "Power USB Core";
+				gpios = <0x0d 0x02 0x00>;
+				regulator-min-microvolt = <0x4c4b40>;
+				regulator-max-microvolt = <0x4c4b40>;
+				regulator-boot-on;
+				enable-active-high;
+				phandle = <0x10>;
+			};
+
+			sata1-regulator {
+				compatible = "regulator-fixed";
+				regulator-name = "Power Drive Port 1";
+				gpios = <0x0d 0x03 0x00>;
+				regulator-min-microvolt = <0xb71b00>;
+				regulator-max-microvolt = <0xb71b00>;
+				regulator-boot-on;
+				regulator-always-on;
+				enable-active-high;
+			};
+
+			sata0-regulator {
+				compatible = "regulator-fixed";
+				regulator-name = "Power Drive Port 0";
+				gpios = <0x0d 0x07 0x00>;
+				regulator-min-microvolt = <0xb71b00>;
+				regulator-max-microvolt = <0xb71b00>;
+				regulator-boot-on;
+				regulator-always-on;
+				enable-active-high;
+			};
+		};
+
+		usbotg@bff80000 {
+			compatible = "amcc,dwc-otg";
+			reg = <0x04 0xbff80000 0x10000>;
+			interrupt-parent = <0x0f>;
+			interrupts = <0x00 0x01 0x02>;
+			#interrupt-cells = <0x01>;
+			#address-cells = <0x00>;
+			#size-cells = <0x00>;
+			interrupt-map = <0x00 0x07 0x1c 0x04 0x01 0x04 0x1a 0x08 0x02 0x03 0x0c 0x04>;
+			interrupt-names = "usb-otg", "high-power", "dma";
+			dr_mode = "host";
+			status = "okay";
+			vbus-supply = <0x10>;
+			phandle = <0x0f>;
+		};
+
+		dma@bffd0800 {
+			compatible = "snps,dma-spear1340";
+			reg = <0x04 0xbffd0800 0x400>;
+			interrupt-parent = <0x03>;
+			interrupts = <0x19 0x04>;
+			#dma-cells = <0x03>;
+			dma-channels = <0x02>;
+			dma-masters = <0x03>;
+			block_size = <0xfff>;
+			data-width = <0x04 0x04 0x04>;
+			multi-block = <0x01 0x01>;
+			chan_allocation_order = <0x01>;
+			chan_priority = <0x01>;
+			snps,dma-protection-control = <0x03>;
+			is_memcpy;
+			phandle = <0x11>;
+		};
+
+		sata@bffd1000 {
+			compatible = "amcc,sata-460ex";
+			reg = <0x04 0xbffd1000 0x800>;
+			interrupt-parent = <0x03>;
+			interrupts = <0x1a 0x04>;
+			dmas = <0x11 0x00 0x00 0x01>;
+			dma-names = "sata-dma";
+			status = "okay";
+			#address-cells = <0x01>;
+			#size-cells = <0x00>;
+
+			sata-port@0 {
+				reg = <0x00>;
+				#thermal-sensor-cells = <0x00>;
+			};
+		};
+
+		sata@bffd1800 {
+			compatible = "amcc,sata-460ex";
+			reg = <0x04 0xbffd1800 0x800>;
+			interrupt-parent = <0x03>;
+			interrupts = <0x1b 0x04>;
+			dmas = <0x11 0x01 0x00 0x02>;
+			dma-names = "sata-dma";
+			status = "okay";
+			#address-cells = <0x01>;
+			#size-cells = <0x00>;
+
+			sata-port@0 {
+				reg = <0x00>;
+				#thermal-sensor-cells = <0x00>;
+			};
+		};
+
+		pciex@d00000000 {
+			device_type = "pci";
+			#interrupt-cells = <0x01>;
+			#size-cells = <0x02>;
+			#address-cells = <0x03>;
+			compatible = "ibm,plb-pciex-apm821xx", "ibm,plb-pciex";
+			primary;
+			port = <0x00>;
+			reg = <0x0d 0x00 0x20000000 0x0c 0x8010000 0x1000>;
+			dcr-reg = <0x100 0x20>;
+			sdr-base = <0x300>;
+			ranges = <0x2000000 0x00 0x80000000 0x0e 0x00 0x00 0x80000000 0x2000000 0x00 0x00 0x0f 0x00 0x00 0x100000 0x1000000 0x00 0x00 0x0f 0x80000000 0x00 0x10000>;
+			dma-ranges = <0x42000000 0x00 0x00 0x00 0x00 0x00 0x80000000>;
+			bus-range = <0x40 0x7f>;
+			interrupt-map-mask = <0x00 0x00 0x00 0x07>;
+			interrupt-map = <0x00 0x00 0x00 0x01 0x12 0x0c 0x04 0x00 0x00 0x00 0x02 0x12 0x0d 0x04 0x00 0x00 0x00 0x03 0x12 0x0e 0x04 0x00 0x00 0x00 0x04 0x12 0x0f 0x04>;
+			status = "disabled";
+		};
+	};
+};
