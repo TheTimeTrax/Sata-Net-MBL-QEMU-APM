@@ -13,6 +13,11 @@ This repository deliberately contains only the project-specific work:
 It does **not** include QEMU itself, OpenWrt images, disk overlays, firmware,
 or generated build files.
 
+Each user must obtain, create, and validate their own OpenWrt or alternative
+disk image. Booting, modifying, or using any image is entirely at that user's
+own risk and responsibility. Do not use an image containing data you cannot
+afford to lose.
+
 ## Current result
 
 OpenWrt 25.12.5 (`apm821xx-sata/wd_mybooklive`) boots from an ext4 QCOW2 disk.
@@ -64,7 +69,7 @@ The runtime files are:
 
 - `mbl-uImage`
 - `mbl-qemu-apollo3g.dtb` (compile from `dts/mbl-apollo3g.dts`)
-- `salida.qcow2`
+- `imagenhd.qcow2`
 
 Then run:
 
