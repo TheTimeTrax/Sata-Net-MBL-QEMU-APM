@@ -17,8 +17,14 @@ or generated build files.
 
 OpenWrt 25.12.5 (`apm821xx-sata/wd_mybooklive`) boots from an ext4 QCOW2 disk.
 The emulated PPC4xx EMAC, MAL and UIC path works with QEMU user-mode networking:
-OpenWrt receives a DHCP lease (`10.0.2.15`) on `br-lan` and can reach the
-user-mode gateway (`10.0.2.2`).
+OpenWrt receives a DHCP lease (`10.0.2.15`) on `br-lan`, resolves DNS names,
+and downloads files over HTTPS.
+
+The supplied QEMU-specific Device Tree deliberately leaves the APM821xx TAH
+checksum accelerator unattached from EMAC. TAH checksum offload is not yet
+implemented in the QEMU model; omitting the link makes the Linux driver use
+software TCP/UDP checksums. The TAH node remains in the tree to describe the
+real hardware for future work.
 
 The implementation remains a hardware prototype, not a cycle-accurate MBL
 emulator.
@@ -27,8 +33,7 @@ emulator.
 
 - macOS with MacPorts dependencies used by the local QEMU build;
 - a clean QEMU 11.1 source checkout;
-- an OpenWrt kernel/uImage, ext4 disk image and compiled MBL DTB kept outside
-  this repository.
+- an OpenWrt kernel/uImage and ext4 disk image kept outside this repository.
 
 ## Apply the patch and build
 
@@ -46,7 +51,16 @@ APM821xx SATA/DMA support and a PPC4xx EMAC/MAL integration.
 
 ## Run OpenWrt
 
-Place these external artifacts in `$MBL_DIR`:
+Compile the supplied Device Tree and place the external runtime artifacts in
+`$MBL_DIR`:
+
+```sh
+dtc -I dts -O dtb \
+  -o "$MBL_DIR/mbl-qemu-apollo3g.dtb" \
+  dts/mbl-apollo3g.dts
+```
+
+The runtime files are:
 
 - `mbl-uImage`
 - `mbl-qemu-apollo3g.dtb` (compile from `dts/mbl-apollo3g.dts`)
@@ -64,7 +78,10 @@ Inside OpenWrt, restart the network configuration if needed and verify:
 ```sh
 /etc/init.d/network restart
 ip addr show dev br-lan
-ping -c 3 10.0.2.2
+nslookup downloads.openwrt.org 10.0.2.3
+uclient-fetch -4 -O /tmp/packages.adb \
+  https://downloads.openwrt.org/releases/25.12.5/packages/powerpc_464fp/base/packages.adb
+ls -lh /tmp/packages.adb
 ```
 
 ## License

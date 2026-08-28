@@ -353,8 +353,12 @@
 				phy-map = <0x02>;
 				rgmii-device = <0x0a>;
 				rgmii-channel = <0x00>;
-				tah-device = <0x0b>;
-				tah-channel = <0x00>;
+				/*
+				 * The QEMU prototype does not yet emulate the 460EX TAH
+				 * checksum engine.  Do not attach it to EMAC: Linux then uses
+				 * software TCP/UDP checksums, which is required for networking
+				 * to work with the current model.
+				 */
 				has-inverted-stacr-oc;
 				has-new-stacr-staopc;
 				status = "okay";
