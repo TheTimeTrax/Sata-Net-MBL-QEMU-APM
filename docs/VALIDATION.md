@@ -13,6 +13,17 @@ Observed successful sequence:
 5. DNS resolution through the QEMU user-mode DNS server (`10.0.2.3`) succeeds.
 6. An HTTPS download with `uclient-fetch` succeeds.
 
+Validated bridged sequence on macOS VMNet:
+
+1. QEMU starts with `-nic vmnet-bridged,ifname=en2,model=ppc4xx-emac`.
+2. The external DHCP server replies to the MBL MAC address.
+3. `br-lan` receives the external lease (`10.0.0.128` during validation).
+4. The guest can communicate with the external LAN gateway (`10.0.0.1`).
+
+The EMAC model uses RX back-pressure with a retry timer. This prevents VMNet
+from permanently stalling when a frame arrives before Linux has posted a MAL
+RX descriptor.
+
 The validation DTB omits the `tah-device` and `tah-channel` EMAC links. The
 460EX TAH checksum accelerator is present in the source tree, but has no QEMU
 implementation yet. Leaving it unattached forces Linux to calculate TCP/UDP

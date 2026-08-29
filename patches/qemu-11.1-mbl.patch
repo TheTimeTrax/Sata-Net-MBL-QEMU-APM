@@ -185,12 +185,15 @@ index ae1ac4f..23877e8 100644
          break;
      case MAL0_TXDEIR:
          /* Read/clear */
-@@ -161,6 +211,9 @@ static void dcr_write_mal(void *opaque, int dcrn, uint32_t val)
+@@ -161,6 +211,12 @@ static void dcr_write_mal(void *opaque, int dcrn, uint32_t val)
      case MAL0_RXEOBISR:
          /* Read/clear */
          mal->rxeobisr &= ~val;
 +        if (!mal->rxeobisr) {
 +            qemu_set_irq(mal->irqs[1], 0);
++        }
++        if (mal->emac) {
++            ppc4xx_emac_rx_kick(mal->emac);
 +        }
          break;
      case MAL0_RXDEIR:
@@ -699,7 +702,7 @@ new file mode 100644
 index 0000000..68fcee1
 --- /dev/null
 +++ b/hw/net/ppc4xx_emac.c
-@@ -0,0 +1,216 @@
+@@ -0,0 +1,287 @@
 +/* IBM EMAC4SYNC register and PHY front end for APM821xx. */
 +#include "qemu/osdep.h"
 +#include "hw/net/ppc4xx_emac.h"
@@ -746,6 +749,62 @@ index 0000000..68fcee1
 +        s->tx_desc = desc;
 +    } else {
 +        s->rx_desc = desc;
++        ppc4xx_emac_rx_kick(s);
++    }
++}
++
++static bool ppc4xx_emac_rx_desc_ready(PPC4xxEMACState *s)
++{
++    uint8_t d[8];
++    hwaddr desc;
++
++    if (!s->mal) {
++        return false;
++    }
++    desc = s->rx_desc ? s->rx_desc : ppc4xx_mal_rx_desc(s->mal, 0);
++    if (!desc) {
++        return false;
++    }
++    dma_memory_read(&address_space_memory, desc, d, sizeof(d),
++                    MEMTXATTRS_UNSPECIFIED);
++    return !!(lduw_be_p(d) & 0x8000);
++}
++
++/* Guest-owned MAL descriptors change in RAM without an MMIO notification. */
++static void ppc4xx_emac_schedule_rx_retry(PPC4xxEMACState *s)
++{
++    timer_mod(s->rx_retry_timer,
++              qemu_clock_get_ns(QEMU_CLOCK_VIRTUAL) + 1000000LL);
++}
++
++static void ppc4xx_emac_rx_retry(void *opaque)
++{
++    PPC4xxEMACState *s = opaque;
++
++    qemu_flush_queued_packets(qemu_get_queue(s->nic));
++    if (!ppc4xx_emac_rx_desc_ready(s)) {
++        ppc4xx_emac_schedule_rx_retry(s);
++    }
++}
++
++static bool ppc4xx_emac_can_receive(NetClientState *nc)
++{
++    PPC4xxEMACState *s = qemu_get_nic_opaque(nc);
++
++    if (!ppc4xx_emac_rx_desc_ready(s)) {
++        ppc4xx_emac_schedule_rx_retry(s);
++        return false;
++    }
++    return true;
++}
++
++void ppc4xx_emac_rx_kick(PPC4xxEMACState *s)
++{
++    if (s->nic) {
++        qemu_flush_queued_packets(qemu_get_queue(s->nic));
++        if (!ppc4xx_emac_rx_desc_ready(s)) {
++            ppc4xx_emac_schedule_rx_retry(s);
++        }
 +    }
 +}
 +
@@ -844,6 +903,10 @@ index 0000000..68fcee1
 +    if (!s->rx_desc) {
 +        s->rx_desc = ppc4xx_mal_rx_desc(s->mal, 0);
 +    }
++    if (!s->rx_desc) {
++        ppc4xx_emac_schedule_rx_retry(s);
++        return 0;
++    }
 +    dma_memory_read(&address_space_memory, s->rx_desc, d, sizeof(d),
 +                    MEMTXATTRS_UNSPECIFIED);
 +    ctrl = lduw_be_p(d);
@@ -868,6 +931,7 @@ index 0000000..68fcee1
 +
 +static NetClientInfo ppc4xx_emac_net_info = {
 +    .type = NET_CLIENT_DRIVER_NIC, .size = sizeof(NICState),
++    .can_receive = ppc4xx_emac_can_receive,
 +    .receive = ppc4xx_emac_receive,
 +};
 +
@@ -889,6 +953,15 @@ index 0000000..68fcee1
 +                          "ppc4xx-emac", 0xc4);
 +    sysbus_init_mmio(sbd, &s->mmio);
 +    sysbus_init_irq(sbd, &s->irq);
++    s->rx_retry_timer = timer_new_ns(QEMU_CLOCK_VIRTUAL,
++                                     ppc4xx_emac_rx_retry, s);
++}
++
++static void ppc4xx_emac_finalize(Object *obj)
++{
++    PPC4xxEMACState *s = PPC4XX_EMAC(obj);
++
++    timer_free(s->rx_retry_timer);
 +}
 +
 +static const Property ppc4xx_emac_properties[] = {
@@ -907,6 +980,7 @@ index 0000000..68fcee1
 +static const TypeInfo ppc4xx_emac_info = {
 +    .name = TYPE_PPC4XX_EMAC, .parent = TYPE_SYS_BUS_DEVICE,
 +    .instance_size = sizeof(PPC4xxEMACState), .instance_init = ppc4xx_emac_init,
++    .instance_finalize = ppc4xx_emac_finalize,
 +    .class_init = ppc4xx_emac_class_init,
 +};
 +
@@ -1471,12 +1545,13 @@ new file mode 100644
 index 0000000..81e8e31
 --- /dev/null
 +++ b/include/hw/net/ppc4xx_emac.h
-@@ -0,0 +1,32 @@
+@@ -0,0 +1,35 @@
 +#ifndef HW_NET_PPC4XX_EMAC_H
 +#define HW_NET_PPC4XX_EMAC_H
 +
 +#include "hw/core/sysbus.h"
 +#include "net/net.h"
++#include "qemu/timer.h"
 +
 +typedef struct Ppc4xxMalState Ppc4xxMalState;
 +
@@ -1490,6 +1565,7 @@ index 0000000..81e8e31
 +OBJECT_DECLARE_SIMPLE_TYPE(PPC4xxEMACState, PPC4XX_EMAC)
 +
 +void ppc4xx_emac_desc_reset(PPC4xxEMACState *s, bool tx, hwaddr desc);
++void ppc4xx_emac_rx_kick(PPC4xxEMACState *s);
 +
 +struct PPC4xxEMACState {
 +    SysBusDevice parent_obj;
@@ -1500,6 +1576,7 @@ index 0000000..81e8e31
 +    Ppc4xxMalState *mal;
 +    hwaddr tx_desc;
 +    hwaddr rx_desc;
++    QEMUTimer *rx_retry_timer;
 +    uint32_t regs[0x100 / 4];
 +};
 +

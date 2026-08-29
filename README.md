@@ -25,6 +25,11 @@ The emulated PPC4xx EMAC, MAL and UIC path works with QEMU user-mode networking:
 OpenWrt receives a DHCP lease (`10.0.2.15`) on `br-lan`, resolves DNS names,
 and downloads files over HTTPS.
 
+The same EMAC/MAL model has also been validated with macOS VMNet bridged mode:
+OpenWrt receives a lease from an external DHCP server and is reachable as a
+peer on that LAN. This requires a QEMU build with VMNet support and a suitable
+host interface, for example `en2`.
+
 The supplied QEMU-specific Device Tree deliberately leaves the APM821xx TAH
 checksum accelerator unattached from EMAC. TAH checksum offload is not yet
 implemented in the QEMU model; omitting the link makes the Linux driver use
@@ -88,6 +93,19 @@ uclient-fetch -4 -O /tmp/packages.adb \
   https://downloads.openwrt.org/releases/25.12.5/packages/powerpc_464fp/base/packages.adb
 ls -lh /tmp/packages.adb
 ```
+
+## Bridged networking on macOS
+
+For a guest address supplied by the physical LAN DHCP server, replace the
+final `-nic user,model=ppc4xx-emac` option with:
+
+```sh
+-nic vmnet-bridged,ifname=en2,model=ppc4xx-emac
+```
+
+Run QEMU with the privileges required by the local VMNet installation. Replace
+`en2` with the active host interface. Confirm in OpenWrt with
+`ip addr show dev br-lan`.
 
 ## License
 
