@@ -26,229 +26,12 @@ index b55507b..73b2e40 100644
  config IDE_CF
      bool
      default y if IDE_BUS
-diff --git a/hw/ide/meson.build b/hw/ide/meson.build
-index ddd7066..553817d 100644
---- a/hw/ide/meson.build
-+++ b/hw/ide/meson.build
-@@ -13,4 +13,5 @@ system_ss.add(when: 'CONFIG_IDE_MMIO', if_true: files('mmio.c'))
- system_ss.add(when: 'CONFIG_IDE_PCI', if_true: files('pci.c'))
- system_ss.add(when: 'CONFIG_IDE_PIIX', if_true: files('piix.c', 'ioport.c'))
- system_ss.add(when: 'CONFIG_IDE_SII3112', if_true: files('sii3112.c'))
-+system_ss.add(when: 'CONFIG_MBL_APM821XX', if_true: files('apm821xx-sata.c'))
- system_ss.add(when: 'CONFIG_IDE_VIA', if_true: files('via.c'))
-diff --git a/hw/net/Kconfig b/hw/net/Kconfig
-index b56a173..460a195 100644
---- a/hw/net/Kconfig
-+++ b/hw/net/Kconfig
-@@ -82,6 +82,9 @@ config OPENCORES_ETH
- config ALLWINNER_EMAC
-     bool
- 
-+config PPC4XX_EMAC
-+    bool
-+
- config ALLWINNER_SUN8I_EMAC
-     bool
- 
-diff --git a/hw/net/meson.build b/hw/net/meson.build
-index 84f142d..70bd6b8 100644
---- a/hw/net/meson.build
-+++ b/hw/net/meson.build
-@@ -28,6 +28,7 @@ system_ss.add(when: 'CONFIG_ALLWINNER_SUN8I_EMAC', if_true: files('allwinner-sun
- system_ss.add(when: 'CONFIG_IMX_FEC', if_true: files('imx_fec.c'))
- system_ss.add(when: 'CONFIG_MSF2', if_true: files('msf2-emac.c'))
- system_ss.add(when: 'CONFIG_MARVELL_88W8618', if_true: files('mv88w8618_eth.c'))
-+system_ss.add(when: 'CONFIG_PPC4XX_EMAC', if_true: files('ppc4xx_emac.c'))
- 
- system_ss.add(when: 'CONFIG_CADENCE', if_true: files('cadence_gem.c'))
- system_ss.add(when: 'CONFIG_STELLARIS_ENET', if_true: files('stellaris_enet.c'))
-diff --git a/hw/ppc/Kconfig b/hw/ppc/Kconfig
-index 347dcce..21a5e12 100644
---- a/hw/ppc/Kconfig
-+++ b/hw/ppc/Kconfig
-@@ -83,6 +83,22 @@ config SAM460EX
-     select USB_OHCI_SYSBUS
-     select FDT_PPC
- 
-+config MBL_APM821XX
-+    bool
-+    default y
-+    depends on PPC && FDT
-+    select PFLASH_CFI01
-+    select IDE_BUS
-+    select IDE_DEV
-+    select M41T80
-+    select PPC440
-+    select SERIAL_MM
-+    select SM501
-+    select SMBUS_EEPROM
-+    select USB_EHCI_SYSBUS
-+    select USB_OHCI_SYSBUS
-+    select FDT_PPC
-+
- config AMIGAONE
-     bool
-     default y
-@@ -182,6 +198,7 @@ config VIRTEX
-     default y
-     depends on PPC && FDT
-     select PPC4XX
-+    select PPC4XX_EMAC
-     select PFLASH_CFI01
-     select SERIAL_MM
-     select XILINX
-diff --git a/hw/ppc/meson.build b/hw/ppc/meson.build
-index 37aa535..6337049 100644
---- a/hw/ppc/meson.build
-+++ b/hw/ppc/meson.build
-@@ -69,6 +69,7 @@ ppc_ss.add(when: 'CONFIG_PPC4XX', if_true: files(
-   'ppc4xx_devs.c',
-   'ppc4xx_sdram.c'))
- ppc_ss.add(when: 'CONFIG_SAM460EX', if_true: files('sam460ex.c'))
-+ppc_ss.add(when: 'CONFIG_MBL_APM821XX', if_true: files('mbl_apm821xx.c'))
- # PReP
- ppc_ss.add(when: 'CONFIG_PREP', if_true: files('prep.c'))
- ppc_ss.add(when: 'CONFIG_PREP', if_true: files('prep_systemio.c'))
-diff --git a/hw/ppc/ppc4xx_devs.c b/hw/ppc/ppc4xx_devs.c
-index ae1ac4f..23877e8 100644
---- a/hw/ppc/ppc4xx_devs.c
-+++ b/hw/ppc/ppc4xx_devs.c
-@@ -25,7 +25,9 @@
- #include "qemu/osdep.h"
- #include "target/ppc/cpu.h"
- #include "hw/ppc/ppc4xx.h"
-+#include "hw/net/ppc4xx_emac.h"
- #include "hw/core/qdev-properties.h"
-+#include "hw/core/irq.h"
- #include "qapi/error.h"
- 
- /*****************************************************************************/
-@@ -62,6 +64,51 @@ static void ppc4xx_mal_reset(DeviceState *dev)
-     mal->txcasr = 0x00000000;
-     mal->txdeir = 0x00000000;
-     mal->txeobisr = 0x00000000;
-+    if (mal->emac) {
-+        ppc4xx_emac_desc_reset(mal->emac, true,
-+                               mal->txcnum ? mal->txctpr[0] : 0);
-+        ppc4xx_emac_desc_reset(mal->emac, false,
-+                               mal->rxcnum ? mal->rxctpr[0] : 0);
-+    }
-+}
-+
-+hwaddr ppc4xx_mal_tx_desc(Ppc4xxMalState *mal, unsigned channel)
-+{
-+    return channel < mal->txcnum ? mal->txctpr[channel] : 0;
-+}
-+
-+void ppc4xx_mal_set_emac(Ppc4xxMalState *mal, PPC4xxEMACState *emac)
-+{
-+    mal->emac = emac;
-+}
-+
-+void ppc4xx_mal_tx_complete(Ppc4xxMalState *mal, unsigned channel)
-+{
-+    if (channel >= mal->txcnum) {
-+        return;
-+    }
-+    mal->txeobisr |= 0x80000000 >> channel;
-+    qemu_set_irq(mal->irqs[0], 1);
-+}
-+
-+hwaddr ppc4xx_mal_rx_desc(Ppc4xxMalState *mal, unsigned channel)
-+{
-+    return channel < mal->rxcnum ? mal->rxctpr[channel] : 0;
-+}
-+
-+void ppc4xx_mal_rx_complete(Ppc4xxMalState *mal, unsigned channel)
-+{
-+    if (channel >= mal->rxcnum) {
-+        return;
-+    }
-+    mal->rxeobisr |= 0x80000000 >> channel;
-+    qemu_set_irq(mal->irqs[1], 1);
-+}
-+
-+unsigned ppc4xx_mal_rx_buf_size(Ppc4xxMalState *mal, unsigned channel)
-+{
-+    return channel < mal->rxcnum && mal->rcbs[channel] ?
-+           mal->rcbs[channel] << 4 : 2048;
- }
- 
- static uint32_t dcr_read_mal(void *opaque, int dcrn)
-@@ -147,6 +194,9 @@ static void dcr_write_mal(void *opaque, int dcrn, uint32_t val)
-     case MAL0_TXEOBISR:
-         /* Read/clear */
-         mal->txeobisr &= ~val;
-+        if (!mal->txeobisr) {
-+            qemu_set_irq(mal->irqs[0], 0);
-+        }
-         break;
-     case MAL0_TXDEIR:
-         /* Read/clear */
-@@ -161,6 +211,12 @@ static void dcr_write_mal(void *opaque, int dcrn, uint32_t val)
-     case MAL0_RXEOBISR:
-         /* Read/clear */
-         mal->rxeobisr &= ~val;
-+        if (!mal->rxeobisr) {
-+            qemu_set_irq(mal->irqs[1], 0);
-+        }
-+        if (mal->emac) {
-+            ppc4xx_emac_rx_kick(mal->emac);
-+        }
-         break;
-     case MAL0_RXDEIR:
-         /* Read/clear */
-@@ -169,9 +222,15 @@ static void dcr_write_mal(void *opaque, int dcrn, uint32_t val)
-     }
-     if (dcrn >= MAL0_TXCTP0R && dcrn < MAL0_TXCTP0R + mal->txcnum) {
-         mal->txctpr[dcrn - MAL0_TXCTP0R] = val;
-+        if (mal->emac && dcrn == MAL0_TXCTP0R) {
-+            ppc4xx_emac_desc_reset(mal->emac, true, val);
-+        }
-     }
-     if (dcrn >= MAL0_RXCTP0R && dcrn < MAL0_RXCTP0R + mal->rxcnum) {
-         mal->rxctpr[dcrn - MAL0_RXCTP0R] = val;
-+        if (mal->emac && dcrn == MAL0_RXCTP0R) {
-+            ppc4xx_emac_desc_reset(mal->emac, false, val);
-+        }
-     }
-     if (dcrn >= MAL0_RCBS0 && dcrn < MAL0_RCBS0 + mal->rxcnum) {
-         mal->rcbs[dcrn - MAL0_RCBS0] = val & 0x000000FF;
-diff --git a/include/hw/ppc/ppc4xx.h b/include/hw/ppc/ppc4xx.h
-index b76bf09..b96bf24 100644
---- a/include/hw/ppc/ppc4xx.h
-+++ b/include/hw/ppc/ppc4xx.h
-@@ -48,6 +48,7 @@ bool ppc4xx_dcr_realize(Ppc4xxDcrDeviceState *dev, PowerPCCPU *cpu,
- /* Memory Access Layer (MAL) */
- #define TYPE_PPC4xx_MAL "ppc4xx-mal"
- OBJECT_DECLARE_SIMPLE_TYPE(Ppc4xxMalState, PPC4xx_MAL);
-+typedef struct PPC4xxEMACState PPC4xxEMACState;
- struct Ppc4xxMalState {
-     Ppc4xxDcrDeviceState parent_obj;
- 
-@@ -68,8 +69,16 @@ struct Ppc4xxMalState {
-     uint32_t *rcbs;
-     uint8_t  txcnum;
-     uint8_t  rxcnum;
-+    PPC4xxEMACState *emac;
- };
- 
-+hwaddr ppc4xx_mal_tx_desc(Ppc4xxMalState *mal, unsigned channel);
-+void ppc4xx_mal_tx_complete(Ppc4xxMalState *mal, unsigned channel);
-+hwaddr ppc4xx_mal_rx_desc(Ppc4xxMalState *mal, unsigned channel);
-+void ppc4xx_mal_rx_complete(Ppc4xxMalState *mal, unsigned channel);
-+unsigned ppc4xx_mal_rx_buf_size(Ppc4xxMalState *mal, unsigned channel);
-+void ppc4xx_mal_set_emac(Ppc4xxMalState *mal, PPC4xxEMACState *emac);
-+
- /* Peripheral local bus arbitrer */
- #define TYPE_PPC4xx_PLB "ppc4xx-plb"
- OBJECT_DECLARE_SIMPLE_TYPE(Ppc4xxPlbState, PPC4xx_PLB);
 diff --git a/hw/ide/apm821xx-sata.c b/hw/ide/apm821xx-sata.c
 new file mode 100644
-index 0000000..6b9bc4d
+index 0000000..d7c0463
 --- /dev/null
 +++ b/hw/ide/apm821xx-sata.c
-@@ -0,0 +1,448 @@
+@@ -0,0 +1,525 @@
 +/*
 + * AppliedMicro APM821xx / 460EX DesignWare SATA controller.
 + *
@@ -264,7 +47,6 @@ index 0000000..6b9bc4d
 +#include "hw/ide/apm821xx-sata.h"
 +#include "migration/vmstate.h"
 +#include "qapi/error.h"
-+#include "qemu/log.h"
 +#include "qemu/module.h"
 +#include "system/dma.h"
 +#include "system/blockdev.h"
@@ -318,9 +100,13 @@ index 0000000..6b9bc4d
 +    IDEDMA dma;
 +    BlockCompletionFunc *dma_cb;
 +    uint32_t dma_regs[APM_AHBDMA_MMIO_SIZE / sizeof(uint32_t)];
++    /* SATA0 owns the AHB-DMAC register bank; both ports are its clients. */
++    APM821xxSATAState *dma_controller;
++    APM821xxSATAState *dma_clients[8];
 +    bool dma_running;
 +    bool drive_present;
 +    uint8_t dma_channel;
++    hwaddr fifo_addr;
 +    uint32_t regs[APM_SATA_MMIO_SIZE / sizeof(uint32_t)];
 +};
 +
@@ -342,6 +128,52 @@ index 0000000..6b9bc4d
 +}
 +
 +/*
++ * The first LLI identifies the requesting SATA port unambiguously: one end
++ * of every transfer is that port's DWC FIFO.  The Linux DMA request selector
++ * is not a physical AHB-DMAC channel number, so never infer the port from
++ * the channel index or from callback ordering.
++ */
++static APM821xxSATAState *apm821xx_sata_dma_client_from_lli(
++    APM821xxSATAState *controller, unsigned int channel)
++{
++    hwaddr lli_addr = controller->dma_regs[APM_AHBDMA_CH_LLP(channel) / 4] &
++                      ~3U;
++    APMAHBDMALLI lli;
++    MemTxResult result;
++    unsigned int i;
++
++    if (!lli_addr) {
++        return NULL;
++    }
++    result = dma_memory_read(&address_space_memory, lli_addr, &lli,
++                             sizeof(lli), MEMTXATTRS_UNSPECIFIED);
++    if (result != MEMTX_OK) {
++        return NULL;
++    }
++    lli.sar = le32_to_cpu(lli.sar);
++    lli.dar = le32_to_cpu(lli.dar);
++    for (i = 0; i < ARRAY_SIZE(controller->dma_clients); i++) {
++        APM821xxSATAState *client = controller->dma_clients[i];
++
++        if (client && (lli.sar == client->fifo_addr ||
++                       lli.dar == client->fifo_addr)) {
++            return client;
++        }
++    }
++    return NULL;
++}
++
++static void apm821xx_sata_dma_start_client(APM821xxSATAState *client,
++                                           unsigned int channel)
++{
++    client->dma_channel = channel;
++    client->dma_running = true;
++    if (client->dma_cb) {
++        client->dma_cb(ide_bus_active_if(&client->bus), 0);
++    }
++}
++
++/*
 + * The Linux dw_dmac driver builds little-endian linked-list items in RAM.
 + * The controller uses the SATA FIFO as one side of each transfer.  QEMU's
 + * IDE core can directly scatter/gather between the backing block device and
@@ -353,12 +185,11 @@ index 0000000..6b9bc4d
 +{
 +    APM821xxSATAState *s = container_of(dma, APM821xxSATAState, dma);
 +    IDEState *ide = ide_bus_active_if(&s->bus);
-+    hwaddr lli_addr = s->dma_regs[APM_AHBDMA_CH_LLP(s->dma_channel) / 4] &
++    APM821xxSATAState *controller = s->dma_controller;
++    hwaddr lli_addr = controller->dma_regs[APM_AHBDMA_CH_LLP(s->dma_channel) / 4] &
 +                      ~3U;
 +    unsigned int entries = 0;
 +
-+    qemu_log_mask(LOG_UNIMP, "mbl-ahbdma: prepare channel%u llp=%08" HWADDR_PRIx
-+                  " limit=%d\n", s->dma_channel, lli_addr, limit);
 +    qemu_sglist_init(&ide->sg, DEVICE(s), 8, &address_space_memory);
 +    ide->io_buffer_size = 0;
 +
@@ -380,14 +211,8 @@ index 0000000..6b9bc4d
 +
 +        /* APM821xx programs BLOCK_TS as a count of 4-byte SATA words. */
 +        bytes = (lli.ctlhi & 0xfffU) * 4;
-+        /* The 32-bit DMA address of SATA0's DWC FIFO is 0xbffd1400. */
-+        mem_addr = (lli.sar == 0xbffd1400U) ? lli.dar : lli.sar;
-+        qemu_log_mask(LOG_UNIMP,
-+                      "mbl-ahbdma: lli%u sar=%08x dar=%08x next=%08x"
-+                      " ctlhi=%08x bytes=%u mem=%08" HWADDR_PRIx "\n",
-+                      entries, lli.sar, lli.dar, lli.llp, lli.ctlhi, bytes,
-+                      mem_addr);
-+        if (mem_addr == 0xbffd1400U || bytes == 0) {
++        mem_addr = (lli.sar == s->fifo_addr) ? lli.dar : lli.sar;
++        if (mem_addr == s->fifo_addr || bytes == 0) {
 +            return -1;
 +        }
 +        bytes = MIN(bytes, (uint32_t)(limit - ide->sg.size));
@@ -402,6 +227,7 @@ index 0000000..6b9bc4d
 +static void apm821xx_sata_dma_commit(const IDEDMA *dma, uint32_t bytes)
 +{
 +    APM821xxSATAState *s = container_of(dma, APM821xxSATAState, dma);
++    APM821xxSATAState *controller = s->dma_controller;
 +    uint32_t mask;
 +
 +    s->regs[APM_SATA_DWC_INTPR / 4] |= APM_SATA_INTPR_DMAT;
@@ -411,15 +237,15 @@ index 0000000..6b9bc4d
 +     * decide that its descriptor is complete; leaving LLP at the first item
 +     * makes it deliberately keep the descriptor active.
 +     */
-+    s->dma_regs[APM_AHBDMA_CH_EN / 4] &= ~(1U << s->dma_channel);
-+    s->dma_regs[APM_AHBDMA_CH_LLP(s->dma_channel) / 4] = 0;
-+    s->dma_regs[APM_AHBDMA_CH_CTL_HI(s->dma_channel) / 4] = 0;
-+    s->dma_regs[APM_AHBDMA_RAW_XFER / 4] |= 1U << s->dma_channel;
++    controller->dma_regs[APM_AHBDMA_CH_EN / 4] &= ~(1U << s->dma_channel);
++    controller->dma_regs[APM_AHBDMA_CH_LLP(s->dma_channel) / 4] = 0;
++    controller->dma_regs[APM_AHBDMA_CH_CTL_HI(s->dma_channel) / 4] = 0;
++    controller->dma_regs[APM_AHBDMA_RAW_XFER / 4] |= 1U << s->dma_channel;
 +    s->dma_running = false;
 +
-+    mask = s->dma_regs[APM_AHBDMA_MASK_XFER / 4];
-+    qemu_set_irq(s->dma_irq,
-+                 !!(s->dma_regs[APM_AHBDMA_RAW_XFER / 4] & mask));
++    mask = controller->dma_regs[APM_AHBDMA_MASK_XFER / 4];
++    qemu_set_irq(controller->dma_irq,
++                 !!(controller->dma_regs[APM_AHBDMA_RAW_XFER / 4] & mask));
 +}
 +
 +static void apm821xx_sata_dma_set_inactive(const IDEDMA *dma, bool more)
@@ -438,6 +264,20 @@ index 0000000..6b9bc4d
 +    APM821xxSATAState *s = container_of(dma, APM821xxSATAState, dma);
 +
 +    s->dma_cb = cb;
++    if (!s->dma_running) {
++        APM821xxSATAState *controller = s->dma_controller;
++        unsigned int channel;
++
++        for (channel = 0; channel < 8; channel++) {
++            if ((controller->dma_regs[APM_AHBDMA_CH_EN / 4] &
++                 (1U << channel)) &&
++                apm821xx_sata_dma_client_from_lli(controller, channel) == s) {
++                s->dma_channel = channel;
++                s->dma_running = true;
++                break;
++            }
++        }
++    }
 +    if (s->dma_running) {
 +        cb(ide, 0);
 +    }
@@ -497,9 +337,6 @@ index 0000000..6b9bc4d
 +    } else {
 +        s->dma_regs[addr / 4] = val;
 +    }
-+    qemu_log_mask(LOG_UNIMP, "mbl-ahbdma: write %03" HWADDR_PRIx
-+                  " = %08x\n", addr, val);
-+
 +    if (addr == APM_AHBDMA_CH_EN) {
 +        /* Upper byte is the write-enable mask, lower byte the new value. */
 +        uint32_t enabled = val & 0xff;
@@ -509,17 +346,22 @@ index 0000000..6b9bc4d
 +        for (ch = 0; ch < 8; ch++) {
 +            if (write_mask & (1U << ch)) {
 +                if (enabled & (1U << ch)) {
-+                    s->dma_channel = ch;
-+                    s->dma_running = true;
-+                    qemu_log_mask(LOG_UNIMP,
-+                                  "mbl-ahbdma: CH_EN channel%u=1 cb=%p"
-+                                  " llp=%08x\n", ch, s->dma_cb,
-+                                  s->dma_regs[APM_AHBDMA_CH_LLP(ch) / 4]);
-+                    if (s->dma_cb) {
-+                        s->dma_cb(ide_bus_active_if(&s->bus), 0);
++                    APM821xxSATAState *client =
++                        apm821xx_sata_dma_client_from_lli(s, ch);
++
++                    if (client) {
++                        apm821xx_sata_dma_start_client(client, ch);
 +                    }
-+                } else if (s->dma_channel == ch) {
-+                    s->dma_running = false;
++                } else {
++                    unsigned int i;
++
++                    for (i = 0; i < ARRAY_SIZE(s->dma_clients); i++) {
++                        APM821xxSATAState *client = s->dma_clients[i];
++
++                        if (client && client->dma_channel == ch) {
++                            client->dma_running = false;
++                        }
++                    }
 +                }
 +            }
 +        }
@@ -608,12 +450,30 @@ index 0000000..6b9bc4d
 +    s->dma_cb = NULL;
 +    s->dma_running = false;
 +    s->dma_channel = UINT8_MAX;
++    if (!s->dma_controller) {
++        s->dma_controller = s;
++    }
 +    s->regs[APM_SATA_SCR_BASE / 4] =
 +        s->drive_present ? APM_SATA_SSTATUS_PRESENT : 0;
 +    s->regs[APM_SATA_DWC_VERSIONR / 4] = 0x312e3300; /* "1.3" */
 +    s->regs[APM_SATA_DWC_IDR / 4] = 0;
 +    qemu_set_irq(s->irq, 0);
 +    qemu_set_irq(s->dma_irq, 0);
++}
++
++void apm821xx_sata_set_dma_controller(DeviceState *dev,
++                                      DeviceState *dma_controller,
++                                      unsigned int client_slot,
++                                      hwaddr fifo_addr)
++{
++    APM821xxSATAState *s = APM821XX_SATA(dev);
++    APM821xxSATAState *controller = APM821XX_SATA(dma_controller);
++
++    assert(client_slot < ARRAY_SIZE(controller->dma_clients));
++    assert(!controller->dma_clients[client_slot]);
++    s->dma_controller = controller;
++    s->fifo_addr = fifo_addr;
++    controller->dma_clients[client_slot] = s;
 +}
 +
 +static void apm821xx_sata_realize(DeviceState *dev, Error **errp)
@@ -697,12 +557,48 @@ index 0000000..6b9bc4d
 +        qdev_realize_and_unref(ide_dev, &s->bus.qbus, &error_fatal);
 +    }
 +}
+diff --git a/hw/ide/meson.build b/hw/ide/meson.build
+index ddd7066..553817d 100644
+--- a/hw/ide/meson.build
++++ b/hw/ide/meson.build
+@@ -13,4 +13,5 @@ system_ss.add(when: 'CONFIG_IDE_MMIO', if_true: files('mmio.c'))
+ system_ss.add(when: 'CONFIG_IDE_PCI', if_true: files('pci.c'))
+ system_ss.add(when: 'CONFIG_IDE_PIIX', if_true: files('piix.c', 'ioport.c'))
+ system_ss.add(when: 'CONFIG_IDE_SII3112', if_true: files('sii3112.c'))
++system_ss.add(when: 'CONFIG_MBL_APM821XX', if_true: files('apm821xx-sata.c'))
+ system_ss.add(when: 'CONFIG_IDE_VIA', if_true: files('via.c'))
+diff --git a/hw/net/Kconfig b/hw/net/Kconfig
+index b56a173..460a195 100644
+--- a/hw/net/Kconfig
++++ b/hw/net/Kconfig
+@@ -82,6 +82,9 @@ config OPENCORES_ETH
+ config ALLWINNER_EMAC
+     bool
+ 
++config PPC4XX_EMAC
++    bool
++
+ config ALLWINNER_SUN8I_EMAC
+     bool
+ 
+diff --git a/hw/net/meson.build b/hw/net/meson.build
+index 84f142d..70bd6b8 100644
+--- a/hw/net/meson.build
++++ b/hw/net/meson.build
+@@ -28,6 +28,7 @@ system_ss.add(when: 'CONFIG_ALLWINNER_SUN8I_EMAC', if_true: files('allwinner-sun
+ system_ss.add(when: 'CONFIG_IMX_FEC', if_true: files('imx_fec.c'))
+ system_ss.add(when: 'CONFIG_MSF2', if_true: files('msf2-emac.c'))
+ system_ss.add(when: 'CONFIG_MARVELL_88W8618', if_true: files('mv88w8618_eth.c'))
++system_ss.add(when: 'CONFIG_PPC4XX_EMAC', if_true: files('ppc4xx_emac.c'))
+ 
+ system_ss.add(when: 'CONFIG_CADENCE', if_true: files('cadence_gem.c'))
+ system_ss.add(when: 'CONFIG_STELLARIS_ENET', if_true: files('stellaris_enet.c'))
 diff --git a/hw/net/ppc4xx_emac.c b/hw/net/ppc4xx_emac.c
 new file mode 100644
-index 0000000..68fcee1
+index 0000000..450e889
 --- /dev/null
 +++ b/hw/net/ppc4xx_emac.c
-@@ -0,0 +1,287 @@
+@@ -0,0 +1,319 @@
 +/* IBM EMAC4SYNC register and PHY front end for APM821xx. */
 +#include "qemu/osdep.h"
 +#include "hw/net/ppc4xx_emac.h"
@@ -777,7 +673,14 @@ index 0000000..68fcee1
 +              qemu_clock_get_ns(QEMU_CLOCK_VIRTUAL) + 1000000LL);
 +}
 +
-+static void ppc4xx_emac_rx_retry(void *opaque)
++/*
++ * Do not flush the network queue directly from a MAL interrupt path.
++ * Completing an RX descriptor raises an interrupt synchronously; the guest
++ * then acknowledges RXEOB and re-arms the ring before receive() has returned.
++ * A direct flush at that point can re-enter receive() for the same queued
++ * packet, producing duplicate frames and eventually wedging the queue.
++ */
++static void ppc4xx_emac_rx_flush_bh(void *opaque)
 +{
 +    PPC4xxEMACState *s = opaque;
 +
@@ -785,6 +688,17 @@ index 0000000..68fcee1
 +    if (!ppc4xx_emac_rx_desc_ready(s)) {
 +        ppc4xx_emac_schedule_rx_retry(s);
 +    }
++}
++
++static void ppc4xx_emac_rx_retry(void *opaque)
++{
++    PPC4xxEMACState *s = opaque;
++
++    if (!ppc4xx_emac_rx_desc_ready(s)) {
++        ppc4xx_emac_schedule_rx_retry(s);
++        return;
++    }
++    qemu_bh_schedule(s->rx_flush_bh);
 +}
 +
 +static bool ppc4xx_emac_can_receive(NetClientState *nc)
@@ -801,10 +715,17 @@ index 0000000..68fcee1
 +void ppc4xx_emac_rx_kick(PPC4xxEMACState *s)
 +{
 +    if (s->nic) {
-+        qemu_flush_queued_packets(qemu_get_queue(s->nic));
-+        if (!ppc4xx_emac_rx_desc_ready(s)) {
-+            ppc4xx_emac_schedule_rx_retry(s);
-+        }
++        qemu_bh_schedule(s->rx_flush_bh);
++    }
++}
++
++/* TX completion must not re-enter EMAC while ppc4xx_emac_tx() is active. */
++static void ppc4xx_emac_tx_complete_bh(void *opaque)
++{
++    PPC4xxEMACState *s = opaque;
++
++    if (s->mal) {
++        ppc4xx_mal_tx_complete(s->mal, 0);
 +    }
 +}
 +
@@ -845,7 +766,8 @@ index 0000000..68fcee1
 +                     s->tx_desc + sizeof(d);
 +    }
 +    if (n) {
-+        ppc4xx_mal_tx_complete(s->mal, 0);
++        /* The guest may recycle descriptors from the TXEOB interrupt. */
++        qemu_bh_schedule(s->tx_complete_bh);
 +    }
 +}
 +
@@ -955,6 +877,10 @@ index 0000000..68fcee1
 +    sysbus_init_irq(sbd, &s->irq);
 +    s->rx_retry_timer = timer_new_ns(QEMU_CLOCK_VIRTUAL,
 +                                     ppc4xx_emac_rx_retry, s);
++    s->rx_flush_bh = qemu_bh_new_guarded(ppc4xx_emac_rx_flush_bh, s,
++                                          &DEVICE(obj)->mem_reentrancy_guard);
++    s->tx_complete_bh = qemu_bh_new_guarded(ppc4xx_emac_tx_complete_bh, s,
++                                             &DEVICE(obj)->mem_reentrancy_guard);
 +}
 +
 +static void ppc4xx_emac_finalize(Object *obj)
@@ -962,6 +888,8 @@ index 0000000..68fcee1
 +    PPC4xxEMACState *s = PPC4XX_EMAC(obj);
 +
 +    timer_free(s->rx_retry_timer);
++    qemu_bh_delete(s->rx_flush_bh);
++    qemu_bh_delete(s->tx_complete_bh);
 +}
 +
 +static const Property ppc4xx_emac_properties[] = {
@@ -990,12 +918,47 @@ index 0000000..68fcee1
 +}
 +
 +type_init(ppc4xx_emac_register_types)
+diff --git a/hw/ppc/Kconfig b/hw/ppc/Kconfig
+index 347dcce..21a5e12 100644
+--- a/hw/ppc/Kconfig
++++ b/hw/ppc/Kconfig
+@@ -83,6 +83,22 @@ config SAM460EX
+     select USB_OHCI_SYSBUS
+     select FDT_PPC
+ 
++config MBL_APM821XX
++    bool
++    default y
++    depends on PPC && FDT
++    select PFLASH_CFI01
++    select IDE_BUS
++    select IDE_DEV
++    select M41T80
++    select PPC440
++    select SERIAL_MM
++    select SM501
++    select SMBUS_EEPROM
++    select USB_EHCI_SYSBUS
++    select USB_OHCI_SYSBUS
++    select FDT_PPC
++
+ config AMIGAONE
+     bool
+     default y
+@@ -182,6 +198,7 @@ config VIRTEX
+     default y
+     depends on PPC && FDT
+     select PPC4XX
++    select PPC4XX_EMAC
+     select PFLASH_CFI01
+     select SERIAL_MM
+     select XILINX
 diff --git a/hw/ppc/mbl_apm821xx.c b/hw/ppc/mbl_apm821xx.c
 new file mode 100644
-index 0000000..30b505f
+index 0000000..6b6b9d4
 --- /dev/null
 +++ b/hw/ppc/mbl_apm821xx.c
-@@ -0,0 +1,525 @@
+@@ -0,0 +1,530 @@
 +/*
 + * QEMU Western Digital My Book Live (APM821xx) prototype board emulation
 + *
@@ -1254,6 +1217,8 @@ index 0000000..30b505f
 +    hwaddr entry = UBOOT_ENTRY;
 +    target_long initrd_size = 0;
 +    DeviceState *dev;
++    DeviceState *sata0;
++    DeviceState *sata1;
 +    SysBusDevice *sbdev;
 +    Ppc4xxMalState *mal;
 +    struct boot_info *boot_info;
@@ -1430,19 +1395,22 @@ index 0000000..30b505f
 +    sysbus_realize_and_unref(SYS_BUS_DEVICE(dev), &error_fatal);
 +
 +    /* MBL's two native DesignWare SATA ports. */
-+    dev = qdev_new(TYPE_APM821XX_SATA);
-+    sysbus_realize_and_unref(SYS_BUS_DEVICE(dev), &error_fatal);
-+    sysbus_mmio_map(SYS_BUS_DEVICE(dev), 0, 0x4bffd1000ULL);
-+    sysbus_mmio_map(SYS_BUS_DEVICE(dev), 1, 0x4bffd0800ULL);
-+    sysbus_connect_irq(SYS_BUS_DEVICE(dev), 0, qdev_get_gpio_in(uic[0], 26));
-+    sysbus_connect_irq(SYS_BUS_DEVICE(dev), 1, qdev_get_gpio_in(uic[0], 25));
-+    apm821xx_sata_init_drive(dev, drive_get_by_index(IF_IDE, 0));
++    sata0 = qdev_new(TYPE_APM821XX_SATA);
++    sysbus_realize_and_unref(SYS_BUS_DEVICE(sata0), &error_fatal);
++    sysbus_mmio_map(SYS_BUS_DEVICE(sata0), 0, 0x4bffd1000ULL);
++    sysbus_mmio_map(SYS_BUS_DEVICE(sata0), 1, 0x4bffd0800ULL);
++    sysbus_connect_irq(SYS_BUS_DEVICE(sata0), 0, qdev_get_gpio_in(uic[0], 26));
++    sysbus_connect_irq(SYS_BUS_DEVICE(sata0), 1, qdev_get_gpio_in(uic[0], 25));
++    apm821xx_sata_init_drive(sata0, drive_get_by_index(IF_IDE, 0));
 +
-+    dev = qdev_new(TYPE_APM821XX_SATA);
-+    sysbus_realize_and_unref(SYS_BUS_DEVICE(dev), &error_fatal);
-+    sysbus_mmio_map(SYS_BUS_DEVICE(dev), 0, 0x4bffd1800ULL);
-+    sysbus_connect_irq(SYS_BUS_DEVICE(dev), 0, qdev_get_gpio_in(uic[0], 27));
-+    apm821xx_sata_init_drive(dev, drive_get_by_index(IF_IDE, 1));
++    sata1 = qdev_new(TYPE_APM821XX_SATA);
++    sysbus_realize_and_unref(SYS_BUS_DEVICE(sata1), &error_fatal);
++    sysbus_mmio_map(SYS_BUS_DEVICE(sata1), 0, 0x4bffd1800ULL);
++    sysbus_connect_irq(SYS_BUS_DEVICE(sata1), 0, qdev_get_gpio_in(uic[0], 27));
++    apm821xx_sata_init_drive(sata1, drive_get_by_index(IF_IDE, 1));
++
++    apm821xx_sata_set_dma_controller(sata0, sata0, 0, 0xbffd1400ULL);
++    apm821xx_sata_set_dma_controller(sata1, sata0, 1, 0xbffd1c00ULL);
 +
 +    /* SoC has 4 UARTs but board has only one wired and two described in fdt */
 +    if (serial_hd(0) != NULL) {
@@ -1521,36 +1489,159 @@ index 0000000..30b505f
 +}
 +
 +DEFINE_MACHINE("mbl-apm821xx", mbl_apm821xx_machine_init)
+diff --git a/hw/ppc/meson.build b/hw/ppc/meson.build
+index 37aa535..6337049 100644
+--- a/hw/ppc/meson.build
++++ b/hw/ppc/meson.build
+@@ -69,6 +69,7 @@ ppc_ss.add(when: 'CONFIG_PPC4XX', if_true: files(
+   'ppc4xx_devs.c',
+   'ppc4xx_sdram.c'))
+ ppc_ss.add(when: 'CONFIG_SAM460EX', if_true: files('sam460ex.c'))
++ppc_ss.add(when: 'CONFIG_MBL_APM821XX', if_true: files('mbl_apm821xx.c'))
+ # PReP
+ ppc_ss.add(when: 'CONFIG_PREP', if_true: files('prep.c'))
+ ppc_ss.add(when: 'CONFIG_PREP', if_true: files('prep_systemio.c'))
+diff --git a/hw/ppc/ppc4xx_devs.c b/hw/ppc/ppc4xx_devs.c
+index ae1ac4f..65787f6 100644
+--- a/hw/ppc/ppc4xx_devs.c
++++ b/hw/ppc/ppc4xx_devs.c
+@@ -25,7 +25,9 @@
+ #include "qemu/osdep.h"
+ #include "target/ppc/cpu.h"
+ #include "hw/ppc/ppc4xx.h"
++#include "hw/net/ppc4xx_emac.h"
+ #include "hw/core/qdev-properties.h"
++#include "hw/core/irq.h"
+ #include "qapi/error.h"
+ 
+ /*****************************************************************************/
+@@ -62,6 +64,51 @@ static void ppc4xx_mal_reset(DeviceState *dev)
+     mal->txcasr = 0x00000000;
+     mal->txdeir = 0x00000000;
+     mal->txeobisr = 0x00000000;
++    if (mal->emac) {
++        ppc4xx_emac_desc_reset(mal->emac, true,
++                               mal->txcnum ? mal->txctpr[0] : 0);
++        ppc4xx_emac_desc_reset(mal->emac, false,
++                               mal->rxcnum ? mal->rxctpr[0] : 0);
++    }
++}
++
++hwaddr ppc4xx_mal_tx_desc(Ppc4xxMalState *mal, unsigned channel)
++{
++    return channel < mal->txcnum ? mal->txctpr[channel] : 0;
++}
++
++void ppc4xx_mal_set_emac(Ppc4xxMalState *mal, PPC4xxEMACState *emac)
++{
++    mal->emac = emac;
++}
++
++void ppc4xx_mal_tx_complete(Ppc4xxMalState *mal, unsigned channel)
++{
++    if (channel >= mal->txcnum) {
++        return;
++    }
++    mal->txeobisr |= 0x80000000 >> channel;
++    qemu_set_irq(mal->irqs[0], 1);
++}
++
++hwaddr ppc4xx_mal_rx_desc(Ppc4xxMalState *mal, unsigned channel)
++{
++    return channel < mal->rxcnum ? mal->rxctpr[channel] : 0;
++}
++
++void ppc4xx_mal_rx_complete(Ppc4xxMalState *mal, unsigned channel)
++{
++    if (channel >= mal->rxcnum) {
++        return;
++    }
++    mal->rxeobisr |= 0x80000000 >> channel;
++    qemu_set_irq(mal->irqs[1], 1);
++}
++
++unsigned ppc4xx_mal_rx_buf_size(Ppc4xxMalState *mal, unsigned channel)
++{
++    return channel < mal->rxcnum && mal->rcbs[channel] ?
++           mal->rcbs[channel] << 4 : 2048;
+ }
+ 
+ static uint32_t dcr_read_mal(void *opaque, int dcrn)
+@@ -147,6 +194,9 @@ static void dcr_write_mal(void *opaque, int dcrn, uint32_t val)
+     case MAL0_TXEOBISR:
+         /* Read/clear */
+         mal->txeobisr &= ~val;
++        if (!mal->txeobisr) {
++            qemu_set_irq(mal->irqs[0], 0);
++        }
+         break;
+     case MAL0_TXDEIR:
+         /* Read/clear */
+@@ -161,6 +211,12 @@ static void dcr_write_mal(void *opaque, int dcrn, uint32_t val)
+     case MAL0_RXEOBISR:
+         /* Read/clear */
+         mal->rxeobisr &= ~val;
++        if (!mal->rxeobisr) {
++            qemu_set_irq(mal->irqs[1], 0);
++        }
++        if (mal->emac) {
++            ppc4xx_emac_rx_kick(mal->emac);
++        }
+         break;
+     case MAL0_RXDEIR:
+         /* Read/clear */
+@@ -169,9 +225,15 @@ static void dcr_write_mal(void *opaque, int dcrn, uint32_t val)
+     }
+     if (dcrn >= MAL0_TXCTP0R && dcrn < MAL0_TXCTP0R + mal->txcnum) {
+         mal->txctpr[dcrn - MAL0_TXCTP0R] = val;
++        if (mal->emac && dcrn == MAL0_TXCTP0R) {
++            ppc4xx_emac_desc_reset(mal->emac, true, val);
++        }
+     }
+     if (dcrn >= MAL0_RXCTP0R && dcrn < MAL0_RXCTP0R + mal->rxcnum) {
+         mal->rxctpr[dcrn - MAL0_RXCTP0R] = val;
++        if (mal->emac && dcrn == MAL0_RXCTP0R) {
++            ppc4xx_emac_desc_reset(mal->emac, false, val);
++        }
+     }
+     if (dcrn >= MAL0_RCBS0 && dcrn < MAL0_RCBS0 + mal->rxcnum) {
+         mal->rcbs[dcrn - MAL0_RCBS0] = val & 0x000000FF;
 diff --git a/include/hw/ide/apm821xx-sata.h b/include/hw/ide/apm821xx-sata.h
 new file mode 100644
-index 0000000..487dcc5
+index 0000000..605d7c1
 --- /dev/null
 +++ b/include/hw/ide/apm821xx-sata.h
-@@ -0,0 +1,13 @@
+@@ -0,0 +1,18 @@
 +/* APM821xx DesignWare SATA controller model. */
 +#ifndef HW_IDE_APM821XX_SATA_H
 +#define HW_IDE_APM821XX_SATA_H
 +
 +#include "qom/object.h"
 +#include "system/block-backend.h"
++#include "exec/hwaddr.h"
 +
 +#define TYPE_APM821XX_SATA "apm821xx-sata"
 +OBJECT_DECLARE_SIMPLE_TYPE(APM821xxSATAState, APM821XX_SATA)
 +
 +void apm821xx_sata_init_drive(DeviceState *dev, DriveInfo *drive);
++void apm821xx_sata_set_dma_controller(DeviceState *dev,
++                                      DeviceState *dma_controller,
++                                      unsigned int client_slot,
++                                      hwaddr fifo_addr);
 +
 +#endif
 diff --git a/include/hw/net/ppc4xx_emac.h b/include/hw/net/ppc4xx_emac.h
 new file mode 100644
-index 0000000..81e8e31
+index 0000000..86fd599
 --- /dev/null
 +++ b/include/hw/net/ppc4xx_emac.h
-@@ -0,0 +1,35 @@
+@@ -0,0 +1,38 @@
 +#ifndef HW_NET_PPC4XX_EMAC_H
 +#define HW_NET_PPC4XX_EMAC_H
 +
 +#include "hw/core/sysbus.h"
 +#include "net/net.h"
++#include "qemu/main-loop.h"
 +#include "qemu/timer.h"
 +
 +typedef struct Ppc4xxMalState Ppc4xxMalState;
@@ -1577,7 +1668,38 @@ index 0000000..81e8e31
 +    hwaddr tx_desc;
 +    hwaddr rx_desc;
 +    QEMUTimer *rx_retry_timer;
++    QEMUBH *rx_flush_bh;
++    QEMUBH *tx_complete_bh;
 +    uint32_t regs[0x100 / 4];
 +};
 +
 +#endif
+diff --git a/include/hw/ppc/ppc4xx.h b/include/hw/ppc/ppc4xx.h
+index b76bf09..b96bf24 100644
+--- a/include/hw/ppc/ppc4xx.h
++++ b/include/hw/ppc/ppc4xx.h
+@@ -48,6 +48,7 @@ bool ppc4xx_dcr_realize(Ppc4xxDcrDeviceState *dev, PowerPCCPU *cpu,
+ /* Memory Access Layer (MAL) */
+ #define TYPE_PPC4xx_MAL "ppc4xx-mal"
+ OBJECT_DECLARE_SIMPLE_TYPE(Ppc4xxMalState, PPC4xx_MAL);
++typedef struct PPC4xxEMACState PPC4xxEMACState;
+ struct Ppc4xxMalState {
+     Ppc4xxDcrDeviceState parent_obj;
+ 
+@@ -68,8 +69,16 @@ struct Ppc4xxMalState {
+     uint32_t *rcbs;
+     uint8_t  txcnum;
+     uint8_t  rxcnum;
++    PPC4xxEMACState *emac;
+ };
+ 
++hwaddr ppc4xx_mal_tx_desc(Ppc4xxMalState *mal, unsigned channel);
++void ppc4xx_mal_tx_complete(Ppc4xxMalState *mal, unsigned channel);
++hwaddr ppc4xx_mal_rx_desc(Ppc4xxMalState *mal, unsigned channel);
++void ppc4xx_mal_rx_complete(Ppc4xxMalState *mal, unsigned channel);
++unsigned ppc4xx_mal_rx_buf_size(Ppc4xxMalState *mal, unsigned channel);
++void ppc4xx_mal_set_emac(Ppc4xxMalState *mal, PPC4xxEMACState *emac);
++
+ /* Peripheral local bus arbitrer */
+ #define TYPE_PPC4xx_PLB "ppc4xx-plb"
+ OBJECT_DECLARE_SIMPLE_TYPE(Ppc4xxPlbState, PPC4xx_PLB);

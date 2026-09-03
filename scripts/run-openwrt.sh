@@ -14,6 +14,20 @@ for path in "$build_dir/qemu-system-ppc" "$project_dir/mbl-uImage" \
     }
 done
 
+drive_args=(
+    -drive "file=$project_dir/imagenhd.qcow2,format=qcow2,if=ide,index=0"
+)
+
+if [[ -n "${MBL_SECOND_DISK:-}" ]]; then
+    [[ -e "$MBL_SECOND_DISK" ]] || {
+        printf 'Missing optional secondary disk: %s\n' "$MBL_SECOND_DISK" >&2
+        exit 1
+    }
+    drive_args+=(
+        -drive "file=$MBL_SECOND_DISK,format=qcow2,if=ide,index=1"
+    )
+fi
+
 exec "$build_dir/qemu-system-ppc" \
     -machine mbl-apm821xx \
     -m 256M \
@@ -21,5 +35,5 @@ exec "$build_dir/qemu-system-ppc" \
     -kernel "$project_dir/mbl-uImage" \
     -dtb "$project_dir/mbl-qemu-apollo3g.dtb" \
     -append "console=ttyS0,115200 root=/dev/sda2 rw rootfstype=ext4" \
-    -drive "file=$project_dir/imagenhd.qcow2,format=qcow2,if=ide" \
+    "${drive_args[@]}" \
     -nic user,model=ppc4xx-emac
